@@ -16,7 +16,7 @@ async function generateSummary(
   candidateName: string,
   transcript: TranscriptMessage[]
 ): Promise<InterviewSummary> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const transcriptText = transcript
     .map((m) => `${m.role === "ai" ? "Interviewer" : candidateName}: ${m.content}`)

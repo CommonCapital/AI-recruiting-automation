@@ -57,6 +57,50 @@ export const interviewSessions = pgTable("interview_sessions", {
   updatedAt:       timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const candidateStatusEnum = pgEnum("candidate_status", [
+  "new",
+  "reviewing",
+  "interview_scheduled",
+  "interviewed",
+  "offer_sent",
+  "hired",
+  "rejected",
+]);
+
+export const candidates = pgTable("candidates", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+
+  // Personal info
+  fullName:       text("full_name").notNull(),
+  email:          text("email"),
+  phone:          text("phone"),
+  location:       text("location"),
+  linkedinUrl:    text("linkedin_url"),
+  portfolioUrl:   text("portfolio_url"),
+
+  // Professional
+  jobTitle:       text("job_title"),          // current / desired role
+  currentCompany: text("current_company"),
+  experienceYears: integer("experience_years"),
+  skills:         jsonb("skills").$type<string[]>().default([]),
+  education:      text("education"),          // e.g. "B.Sc Computer Science, MIT"
+  summary:        text("summary"),            // professional summary
+
+  // Resume
+  resumeText:     text("resume_text"),        // extracted plain text from resume
+  resumeFileName: text("resume_file_name"),
+
+  // Status & meta
+  status:         candidateStatusEnum("status").default("new").notNull(),
+  appliedJobId:   text("applied_job_id"),     // optional FK to jobs table
+  notes:          text("notes"),              // recruiter notes
+
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+  updatedAt:      timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type Candidate    = typeof candidates.$inferSelect;
+export type NewCandidate = typeof candidates.$inferInsert;
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface TranscriptMessage {
   role:      "ai" | "user";
