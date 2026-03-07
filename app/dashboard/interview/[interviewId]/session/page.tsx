@@ -97,22 +97,22 @@ function SummaryScreen({ summary, candidateName, elapsedSeconds }: { summary: In
       <div style={{ borderRadius: 18, padding: 24, background: "#0d1f33", border: "1px solid #1e3a52", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}><BarChart2 size={14} color="#3b82f6" /><span style={{ fontSize: 13, fontWeight: 700, color: "#d9e2ec" }}>Skill Breakdown</span></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {summary.skillScores.map((s) => <SkillBar key={s.skill} {...s} />)}
+          {Array.isArray(summary?.skillScores) && summary.skillScores.map((s) => <SkillBar key={s.skill} {...s} />)}
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
         <div style={{ borderRadius: 18, padding: 20, background: "#0d1f33", border: "1px solid #1e3a52" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}><ThumbsUp size={13} color="#10b981" /><span style={{ fontSize: 11, fontWeight: 700, color: "#10b981", letterSpacing: "0.06em" }}>STRENGTHS</span></div>
-          {summary.strengths.map((s, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 10 }}><span style={{ color: "#10b981", flexShrink: 0 }}>✓</span><span style={{ fontSize: 13, color: "#94b4cc", lineHeight: 1.5 }}>{s}</span></div>)}
+          {Array.isArray(summary?.strengths) && summary.strengths.map((s, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 10 }}><span style={{ color: "#10b981", flexShrink: 0 }}>✓</span><span style={{ fontSize: 13, color: "#94b4cc", lineHeight: 1.5 }}>{s}</span></div>)}
         </div>
         <div style={{ borderRadius: 18, padding: 20, background: "#0d1f33", border: "1px solid #1e3a52" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}><AlertTriangle size={13} color="#f59e0b" /><span style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", letterSpacing: "0.06em" }}>AREAS TO IMPROVE</span></div>
-          {summary.weaknesses.length > 0
+          {Array.isArray(summary.weaknesses) && summary.weaknesses.length > 0
             ? summary.weaknesses.map((w, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 10 }}><span style={{ color: "#f59e0b", flexShrink: 0 }}>△</span><span style={{ fontSize: 13, color: "#94b4cc", lineHeight: 1.5 }}>{w}</span></div>)
             : <p style={{ fontSize: 13, color: "#627d98" }}>No significant weaknesses noted.</p>}
         </div>
       </div>
-      {summary.redFlags.length > 0 && (
+      {Array.isArray(summary.redFlags) && summary.redFlags.length > 0 && (
         <div style={{ borderRadius: 18, padding: 20, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}><AlertTriangle size={13} color="#ef4444" /><span style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", letterSpacing: "0.06em" }}>RED FLAGS</span></div>
           {summary.redFlags.map((f, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}><span style={{ color: "#ef4444" }}>⚠</span><span style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>{f}</span></div>)}

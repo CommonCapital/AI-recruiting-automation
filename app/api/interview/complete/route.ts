@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "@/app/db";
-import { interviewSessions, TranscriptMessage, InterviewSummary } from "@/app/db/schema";
+import { interviewSessions, InterviewSummary } from "@/app/db/schema";
 import { eq } from "drizzle-orm";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
@@ -14,7 +14,7 @@ async function generateSummary(
   jobTitle: string,
   jobDescription: string,
   candidateName: string,
-  transcript: TranscriptMessage[]
+  transcript: any[]
 ): Promise<InterviewSummary> {
   const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
@@ -94,28 +94,23 @@ export async function POST(req: NextRequest) {
         .update(interviewSessions)
         .set({
           status: "completed",
-          transcript,
-          summary,
           durationSeconds,
           questionsAnswered,
           completedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(interviewSessions.id, sessionId));
+        .where(eq(interviewSessions.id, parseInt(sessionId)));
     } else {
       const [inserted] = await db
         .insert(interviewSessions)
         .values({
-          interviewId,
-          candidateName,
-          candidateEmail: candidateEmail ?? null,
-          jobTitle: jobTitle ?? "Unknown Role",
-          jobDescription: jobDescription ?? null,
+          sessionId: interviewId,
+          candidateId: 0, // TODO: Get actual candidate ID
+          jobId: parseInt(interviewId),
+          interviewType: "screening",
           status: "completed",
-          transcript,
-          summary,
           durationSeconds,
-          questionsAnswered: questionsAnswered ?? transcript.filter((m: TranscriptMessage) => m.role === "user").length,
+          questionsAnswered: questionsAnswered ?? transcript.filter((m: any) => m.role === "user").length,
           totalQuestions: totalQuestions ?? 7,
           completedAt: new Date(),
         })

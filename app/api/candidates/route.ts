@@ -17,8 +17,7 @@ export async function GET(req: NextRequest) {
         search
           ? or(
               ilike(candidates.fullName, `%${search}%`),
-              ilike(candidates.email,    `%${search}%`),
-              ilike(candidates.jobTitle, `%${search}%`),
+              ilike(candidates.email, `%${search}%`),
             )
           : undefined
       )
@@ -37,17 +36,34 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as Partial<NewCandidate>;
 
     if (!body.fullName?.trim()) {
-      return NextResponse.json({ error: "fullName is required" }, { status: 400 });
+      return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
 
     const [inserted] = await db
-      .insert(candidates)
-      .values({
-        ...body,
-        fullName: body.fullName.trim(),
-        updatedAt: new Date(),
-      })
-      .returning();
+  .insert(candidates)
+  .values({
+    fullName: body.fullName!.trim(),
+    email: body.email || "",
+    phone: body.phone || null,
+    location: body.location || null,
+    linkedinUrl: body.linkedinUrl || null,
+    portfolioUrl: body.portfolioUrl || null,
+    jobTitle: body.jobTitle || null,
+    currentCompany: body.currentCompany || null,
+    experienceYears: body.experienceYears ? Number(body.experienceYears) : null,
+    skills: Array.isArray(body.skills)
+  ? (body.skills as string[])
+  : typeof body.skills === "string"
+  ? (body.skills as string).split(",").map((s: string) => s.trim()).filter(Boolean)
+  : [],
+    education: body.education || null,
+    summary: body.summary || null,
+    notes: body.notes || null,
+    resumeFileName: body.resumeFileName || null,
+    status: "new",
+    updatedAt: new Date(),
+  })
+  .returning();
 
     return NextResponse.json({ candidate: inserted }, { status: 201 });
   } catch (err: any) {

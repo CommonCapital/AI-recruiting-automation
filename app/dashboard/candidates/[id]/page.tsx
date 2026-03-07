@@ -1,271 +1,429 @@
 // app/(dashboard)/dashboard/candidates/[id]/page.tsx
-// Shows candidate's interview session results to the recruiter
+"use client";
 
-import { notFound } from "next/navigation";
-import { db } from "@/app/db";
-import { interviewSessions, InterviewSummary } from "@/app/db/schema";
-import { eq } from "drizzle-orm";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import {
-  ThumbsUp, ThumbsDown, Minus, Star, BarChart2,
-  FileText, Clock, AlertTriangle, CheckCircle2,
-  TrendingUp, MessageSquare, User, Briefcase,
+  ArrowLeft, Mail, Phone, MapPin, Briefcase, GraduationCap,
+  Link2, Github, Linkedin, FileText, Calendar, Clock,
+  Edit2, Save, X, Trash2, CheckCircle2, AlertCircle,
+  Loader2, ChevronDown, User, StickyNote,
 } from "lucide-react";
 
-interface Props { params: { id: string } }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatTime(s: number) {
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Candidate {
+  id: string; fullName: string; email: string | null; phone: string | null;
+  location: string | null; linkedinUrl: string | null; portfolioUrl: string | null;
+  jobTitle: string | null; currentCompany: string | null; experienceYears: number | null;
+  skills: string[]; education: string | null; summary: string | null;
+  resumeFileName: string | null; status: string; notes: string | null;
+  createdAt: string; updatedAt: string;
 }
 
-const RECO_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
-  strong_yes: { label: "Strong Hire",  color: "#10b981", bg: "#d1fae5", border: "#6ee7b7", icon: ThumbsUp },
-  yes:        { label: "Hire",         color: "#3b82f6", bg: "#dbeafe", border: "#93c5fd", icon: ThumbsUp },
-  maybe:      { label: "Consider",     color: "#d97706", bg: "#fef3c7", border: "#fcd34d", icon: Minus },
-  no:         { label: "Pass",         color: "#ef4444", bg: "#fee2e2", border: "#fca5a5", icon: ThumbsDown },
-  strong_no:  { label: "Strong Pass",  color: "#dc2626", bg: "#fee2e2", border: "#f87171", icon: ThumbsDown },
+const STATUS: Record<string, { bg: string; color: string; dot: string; label: string }> = {
+  new:                 { bg: "#eff6ff", color: "#1d4ed8", dot: "#3b82f6",  label: "New" },
+  reviewing:           { bg: "#fffbeb", color: "#b45309", dot: "#f59e0b",  label: "Reviewing" },
+  interview_scheduled: { bg: "#f5f3ff", color: "#6d28d9", dot: "#8b5cf6",  label: "Interview Scheduled" },
+  interviewed:         { bg: "#f0fdf4", color: "#15803d", dot: "#22c55e",  label: "Interviewed" },
+  offer_sent:          { bg: "#fff7ed", color: "#c2410c", dot: "#f97316",  label: "Offer Sent" },
+  hired:               { bg: "#dcfce7", color: "#166534", dot: "#16a34a",  label: "Hired" },
+  rejected:            { bg: "#fef2f2", color: "#b91c1c", dot: "#ef4444",  label: "Rejected" },
 };
 
-// ─── Score ring (light theme) ─────────────────────────────────────────────────
-function ScoreRing({ score }: { score: number }) {
-  const r = 40, circ = 2 * Math.PI * r;
-  const fill = (score / 100) * circ;
-  const color = score >= 75 ? "#10b981" : score >= 50 ? "#f59e0b" : "#ef4444";
+function initials(n: string) { return n.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2); }
+function grad(n: string) { return ["linear-gradient(135deg,#6366f1,#3b82f6)", "linear-gradient(135deg,#10b981,#059669)", "linear-gradient(135deg,#f59e0b,#d97706)", "linear-gradient(135deg,#8b5cf6,#7c3aed)", "linear-gradient(135deg,#ec4899,#db2777)"][n.charCodeAt(0) % 5]; }
+
+// ─── Small reusable pieces ────────────────────────────────────────────────────
+function InfoRow({ icon: Icon, label, value, href }: { icon: React.ElementType; label: string; value: string | null; href?: string }) {
+  if (!value) return null;
   return (
-    <div className="relative flex items-center justify-center" style={{ width: 104, height: 104 }}>
-      <svg width="104" height="104" style={{ transform: "rotate(-90deg)" }}>
-        <circle cx="52" cy="52" r={r} fill="none" stroke="#d9e2ec" strokeWidth="8" />
-        <circle cx="52" cy="52" r={r} fill="none" stroke={color} strokeWidth="8"
-          strokeDasharray={`${fill} ${circ}`} strokeLinecap="round" />
-      </svg>
-      <div className="absolute flex flex-col items-center">
-        <span style={{ fontSize: 24, fontWeight: 800, color: "#0a1f33", lineHeight: 1 }}>{score}</span>
-        <span style={{ fontSize: 10, color: "#829ab1", fontWeight: 600 }}>/100</span>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: "#f4f6f8", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+        <Icon size={14} color="#829ab1" />
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontSize: 11, fontWeight: 600, color: "#bcccdc", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
+        {href ? (
+          <a href={href} target="_blank" rel="noopener noreferrer"
+            style={{ fontSize: 13.5, color: "#2563eb", textDecoration: "none", fontWeight: 500, wordBreak: "break-all" }}
+            onMouseEnter={e => (e.currentTarget.style.textDecoration = "underline")}
+            onMouseLeave={e => (e.currentTarget.style.textDecoration = "none")}>
+            {value}
+          </a>
+        ) : (
+          <p style={{ fontSize: 13.5, color: "#334e68", margin: 0, wordBreak: "break-word" }}>{value}</p>
+        )}
       </div>
     </div>
   );
 }
 
-// ─── Skill bar (light theme) ──────────────────────────────────────────────────
-function SkillBar({ skill, score, rationale }: { skill: string; score: number; rationale: string }) {
-  const color = score >= 7 ? "#10b981" : score >= 5 ? "#3b82f6" : "#f59e0b";
+function Card({ children, title, icon: Icon, action }: { children: React.ReactNode; title: string; icon: React.ElementType; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between">
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#334e68" }}>{skill}</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color }}>{score}<span style={{ fontSize: 10, color: "#829ab1" }}>/10</span></span>
+    <div style={{ background: "#fff", border: "1px solid #e5eaf0", borderRadius: 14, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid #f4f6f8" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: "#f0f4f8", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon size={13} color="#627d98" />
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#0a1f33" }}>{title}</span>
+        </div>
+        {action}
       </div>
-      <div style={{ height: 6, background: "#d9e2ec", borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ width: `${score * 10}%`, height: "100%", background: color, borderRadius: 99 }} />
-      </div>
-      <p style={{ fontSize: 11.5, color: "#829ab1", margin: 0, lineHeight: 1.5 }}>{rationale}</p>
+      <div style={{ padding: "16px 18px" }}>{children}</div>
     </div>
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-export default async function CandidateDetailPage({ params }: Props) {
-  const session = await db.query.interviewSessions.findFirst({
-    where: eq(interviewSessions.id, params.id),
-  });
-
-  if (!session) notFound();
-
-  const summary = session.summary as InterviewSummary | null;
-  const reco    = summary ? (RECO_CONFIG[summary.recommendation] ?? RECO_CONFIG.maybe) : null;
-  const RecoIcon = reco?.icon;
-
+function EditField({ label, value, onChange, type = "text", placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+}) {
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif" }}>
-      {/* Page header */}
-      <div style={{ marginBottom: 32 }}>
-        <div className="flex items-center gap-2 mb-1" style={{ fontSize: 12, color: "#829ab1" }}>
-          <span>Candidates</span>
-          <span>/</span>
-          <span style={{ color: "#334e68" }}>{session.candidateName}</span>
-        </div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0a1f33", margin: 0 }}>
-          {session.candidateName}
-        </h1>
+    <div>
+      <label style={{ fontSize: 11.5, fontWeight: 600, color: "#829ab1", display: "block", marginBottom: 5 }}>{label}</label>
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1.5px solid #e5eaf0", fontSize: 13, color: "#334e68", outline: "none", boxSizing: "border-box", background: "#fafbfc" }}
+        onFocus={e => (e.currentTarget.style.borderColor = "#3b82f6")}
+        onBlur={e => (e.currentTarget.style.borderColor = "#e5eaf0")} />
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+export default function CandidateDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const router  = useRouter();
+
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [notFound, setNotFound]   = useState(false);
+
+  // Edit mode state
+  const [editing, setEditing]   = useState(false);
+  const [draft, setDraft]       = useState<Partial<Candidate>>({});
+  const [skillsInput, setSkillsInput] = useState(""); // separate string for skills edit field
+  const [saving, setSaving]     = useState(false);
+  const [saveMsg, setSaveMsg]   = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Status update
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  // Delete confirm
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [deleting, setDeleting]     = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/candidates/${id}`)
+      .then(r => r.json())
+      .then(j => {
+        if (j.error) { setNotFound(true); return; }
+        setCandidate(j.candidate);
+        setDraft(j.candidate);
+        setSkillsInput(Array.isArray(j.candidate.skills) ? j.candidate.skills.join(", ") : "");
+      })
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  function d(k: keyof Candidate) {
+    return (v: string) => setDraft(p => ({ ...p, [k]: v }));
+  }
+
+  async function handleSave() {
+    setSaving(true); setSaveMsg(null);
+    try {
+      const res  = await fetch(`/api/candidates/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...draft,
+          skills: skillsInput.split(",").map((s: string) => s.trim()).filter(Boolean),
+          experienceYears: draft.experienceYears ? Number(draft.experienceYears) : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      setCandidate(json.candidate);
+      setDraft(json.candidate);
+      setSkillsInput(Array.isArray(json.candidate.skills) ? json.candidate.skills.join(", ") : "");
+      setEditing(false);
+      setSaveMsg({ ok: true, text: "Changes saved." });
+      setTimeout(() => setSaveMsg(null), 3000);
+    } catch (e: any) {
+      setSaveMsg({ ok: false, text: e.message ?? "Save failed." });
+    } finally { setSaving(false); }
+  }
+
+  async function handleStatusChange(status: string) {
+    if (!candidate) return;
+    setStatusLoading(true);
+    const res  = await fetch(`/api/candidates/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const json = await res.json();
+    setCandidate(json.candidate);
+    setStatusLoading(false);
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    await fetch(`/api/candidates/${id}`, { method: "DELETE" });
+    router.push("/dashboard/candidates");
+  }
+
+  if (loading) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", gap: 10, fontFamily: "system-ui,sans-serif" }}>
+      <Loader2 size={22} color="#3b82f6" style={{ animation: "spin 1s linear infinite" }} />
+      <span style={{ fontSize: 14, color: "#829ab1" }}>Loading candidate…</span>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  if (notFound || !candidate) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 16, fontFamily: "system-ui,sans-serif" }}>
+      <p style={{ fontSize: 16, fontWeight: 600, color: "#486581" }}>Candidate not found.</p>
+      <button onClick={() => router.push("/dashboard/candidates")}
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 18px", borderRadius: 10, border: "none", background: "#f0f4f8", color: "#486581", fontWeight: 600, cursor: "pointer" }}>
+        <ArrowLeft size={14} /> Back to Candidates
+      </button>
+    </div>
+  );
+
+  const s = STATUS[candidate.status] ?? STATUS.new;
+  return (
+    <div style={{ padding: "24px 28px", fontFamily: "system-ui,-apple-system,sans-serif", maxWidth: 1100 }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      {/* ── Breadcrumb + back ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20 }}>
+        <button onClick={() => router.push("/dashboard/candidates")}
+          style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: "1px solid #e5eaf0", background: "#f8fafc", fontSize: 12.5, fontWeight: 600, color: "#627d98", cursor: "pointer", transition: "background 0.15s" }}
+          onMouseEnter={e => (e.currentTarget.style.background = "#f0f4f8")}
+          onMouseLeave={e => (e.currentTarget.style.background = "#f8fafc")}>
+          <ArrowLeft size={13} /> Candidates
+        </button>
+        <span style={{ fontSize: 12.5, color: "#d1d5db" }}>/</span>
+        <span style={{ fontSize: 12.5, color: "#829ab1" }}>{candidate.fullName}</span>
       </div>
 
-      {/* Meta strip */}
-      <div className="flex flex-wrap items-center gap-3 mb-8">
-        {[
-          { icon: Briefcase, text: session.jobTitle },
-          { icon: User,      text: session.candidateName },
-          { icon: Clock,     text: session.durationSeconds ? formatTime(session.durationSeconds) : "—" },
-          { icon: MessageSquare, text: `${session.questionsAnswered}/${session.totalQuestions} questions answered` },
-        ].map(({ icon: Icon, text }) => (
-          <div key={text} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
-            style={{ background: "#f0f4f8", border: "1px solid #d9e2ec", fontSize: 12, color: "#486581" }}>
-            <Icon size={12} color="#829ab1" />
-            {text}
+      {/* ── Hero header ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* Avatar */}
+          <div style={{ width: 64, height: 64, borderRadius: "50%", background: grad(candidate.fullName), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff", flexShrink: 0 }}>
+            {initials(candidate.fullName)}
           </div>
-        ))}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
-          style={{ background: "#d1fae5", border: "1px solid #6ee7b7", fontSize: 12, color: "#065f46" }}>
-          <CheckCircle2 size={12} color="#10b981" />
-          {session.status === "completed" ? "Completed" : session.status}
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0a1f33", margin: "0 0 4px" }}>{candidate.fullName}</h1>
+            <p style={{ fontSize: 14, color: "#627d98", margin: "0 0 8px" }}>
+              {candidate.jobTitle ?? "No title"}
+              {candidate.currentCompany ? <span style={{ color: "#bcccdc" }}> · {candidate.currentCompany}</span> : null}
+            </p>
+            {/* Status pill + dropdown */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, padding: "4px 11px", borderRadius: 99, background: s.bg, color: s.color }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.dot, display: "block" }} />
+                {s.label}
+              </span>
+              <div style={{ position: "relative" }}>
+                {statusLoading
+                  ? <Loader2 size={14} color="#829ab1" style={{ animation: "spin 1s linear infinite" }} />
+                  : (
+                    <div style={{ position: "relative", display: "inline-block" }}>
+                      <select value={candidate.status} onChange={e => handleStatusChange(e.target.value)}
+                        style={{ appearance: "none", padding: "4px 28px 4px 10px", borderRadius: 8, border: "1px solid #e5eaf0", fontSize: 12, color: "#486581", background: "#f8fafc", cursor: "pointer", outline: "none" }}>
+                        {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                      <ChevronDown size={11} color="#bcccdc" style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+                    </div>
+                  )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          {editing ? (
+            <>
+              <button onClick={() => { setEditing(false); setDraft(candidate); setSkillsInput(Array.isArray(candidate.skills) ? candidate.skills.join(", ") : ""); }}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "1px solid #e5eaf0", background: "#f8fafc", fontSize: 13, fontWeight: 600, color: "#627d98", cursor: "pointer" }}>
+                <X size={13} /> Cancel
+              </button>
+              <button onClick={handleSave} disabled={saving}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 9, border: "none", background: saving ? "#93c5fd" : "linear-gradient(135deg,#2563eb,#1d4ed8)", fontSize: 13, fontWeight: 600, color: "#fff", cursor: saving ? "not-allowed" : "pointer", boxShadow: "0 3px 10px rgba(37,99,235,0.25)" }}>
+                {saving ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Save size={13} />}
+                {saving ? "Saving…" : "Save Changes"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setEditing(true)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "1px solid #e5eaf0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#334e68", cursor: "pointer" }}>
+                <Edit2 size={13} /> Edit
+              </button>
+              <button onClick={() => setConfirmDel(true)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: "1px solid #fee2e2", background: "#fef2f2", fontSize: 13, fontWeight: 600, color: "#ef4444", cursor: "pointer" }}>
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {!summary ? (
-        <div className="flex items-center justify-center rounded-2xl p-12"
-          style={{ background: "#f0f4f8", border: "1px dashed #d9e2ec" }}>
-          <p style={{ color: "#829ab1", fontSize: 14 }}>No summary generated yet.</p>
+      {/* Save notification */}
+      {saveMsg && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, marginBottom: 20, background: saveMsg.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${saveMsg.ok ? "#bbf7d0" : "#fca5a5"}` }}>
+          {saveMsg.ok ? <CheckCircle2 size={14} color="#10b981" /> : <AlertCircle size={14} color="#ef4444" />}
+          <span style={{ fontSize: 13, color: saveMsg.ok ? "#15803d" : "#dc2626" }}>{saveMsg.text}</span>
         </div>
-      ) : (
-        <div className="flex flex-col gap-6">
+      )}
 
-          {/* Score + recommendation */}
-          <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <div className="flex flex-col items-center gap-4 rounded-2xl p-6"
-              style={{ background: "#ffffff", border: "1px solid #d9e2ec", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-              <div className="flex items-center gap-2">
-                <Star size={13} color="#f59e0b" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#829ab1", letterSpacing: "0.06em" }}>OVERALL SCORE</span>
-              </div>
-              <ScoreRing score={summary.overallScore} />
-              <p style={{ fontSize: 13, color: "#627d98", margin: 0, textAlign: "center", lineHeight: 1.5 }}>
-                {summary.headline}
-              </p>
-            </div>
+      {/* ── Two column layout ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16, alignItems: "start" }}>
 
-            <div className="flex flex-col items-center justify-center gap-4 rounded-2xl p-6"
-              style={{ background: "#ffffff", border: "1px solid #d9e2ec", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-              <div className="flex items-center gap-2">
-                <TrendingUp size={13} color="#3b82f6" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#829ab1", letterSpacing: "0.06em" }}>RECOMMENDATION</span>
-              </div>
-              <div className="flex items-center justify-center rounded-full"
-                style={{ width: 60, height: 60, background: reco!.bg, border: `2px solid ${reco!.border}` }}>
-                <RecoIcon size={24} color={reco!.color} />
-              </div>
-              <span style={{ fontSize: 20, fontWeight: 800, color: reco!.color }}>{reco!.label}</span>
-            </div>
-          </div>
+        {/* LEFT column */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-          {/* Skill breakdown */}
-          <div className="rounded-2xl p-6"
-            style={{ background: "#ffffff", border: "1px solid #d9e2ec", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-            <div className="flex items-center gap-2 mb-5">
-              <BarChart2 size={14} color="#3b82f6" />
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: "#102a43", margin: 0 }}>Skill Breakdown</h2>
-            </div>
-            <div className="flex flex-col gap-5">
-              {summary.skillScores.map((s) => <SkillBar key={s.skill} {...s} />)}
-            </div>
-          </div>
-
-          {/* Strengths & Weaknesses */}
-          <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <div className="rounded-2xl p-5"
-              style={{ background: "#ffffff", border: "1px solid #d9e2ec", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-              <div className="flex items-center gap-2 mb-4">
-                <ThumbsUp size={13} color="#10b981" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#10b981", letterSpacing: "0.06em" }}>STRENGTHS</span>
-              </div>
-              <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
-                {summary.strengths.map((s, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span style={{ color: "#10b981", flexShrink: 0 }}>✓</span>
-                    <span style={{ fontSize: 13, color: "#486581", lineHeight: 1.5 }}>{s}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-2xl p-5"
-              style={{ background: "#ffffff", border: "1px solid #d9e2ec", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-              <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle size={13} color="#f59e0b" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#d97706", letterSpacing: "0.06em" }}>AREAS TO IMPROVE</span>
-              </div>
-              <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
-                {summary.weaknesses.length > 0
-                  ? summary.weaknesses.map((w, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span style={{ color: "#f59e0b", flexShrink: 0 }}>△</span>
-                      <span style={{ fontSize: 13, color: "#486581", lineHeight: 1.5 }}>{w}</span>
-                    </li>
-                  ))
-                  : <li style={{ fontSize: 13, color: "#829ab1" }}>No significant weaknesses noted.</li>}
-              </ul>
-            </div>
-          </div>
-
-          {/* Red flags */}
-          {summary.redFlags.length > 0 && (
-            <div className="rounded-2xl p-5"
-              style={{ background: "#fff5f5", border: "1px solid #fecaca", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-              <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle size={13} color="#ef4444" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", letterSpacing: "0.06em" }}>RED FLAGS</span>
-              </div>
-              <ul className="list-none m-0 p-0 flex flex-col gap-2">
-                {summary.redFlags.map((f, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span style={{ color: "#ef4444", flexShrink: 0 }}>⚠</span>
-                    <span style={{ fontSize: 13, color: "#991b1b", lineHeight: 1.5 }}>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {/* Summary */}
+          {(editing || candidate.summary) && (
+            <Card title="Summary" icon={FileText}>
+              {editing ? (
+                <textarea value={(draft.summary as string) ?? ""} onChange={e => setDraft(p => ({ ...p, summary: e.target.value }))}
+                  placeholder="Professional summary…" rows={4}
+                  style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1.5px solid #e5eaf0", fontSize: 13, color: "#334e68", resize: "vertical", outline: "none", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.6 }}
+                  onFocus={e => (e.currentTarget.style.borderColor = "#3b82f6")}
+                  onBlur={e => (e.currentTarget.style.borderColor = "#e5eaf0")} />
+              ) : (
+                <p style={{ fontSize: 13.5, color: "#486581", lineHeight: 1.8, margin: 0 }}>{candidate.summary}</p>
+              )}
+            </Card>
           )}
 
-          {/* Recruiter notes */}
-          <div className="rounded-2xl p-6"
-            style={{ background: "#ffffff", border: "1px solid #d9e2ec", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <FileText size={14} color="#3b82f6" />
-                <h2 style={{ fontSize: 14, fontWeight: 700, color: "#102a43", margin: 0 }}>Recruiter Notes</h2>
-              </div>
-              <span style={{ fontSize: 10, color: "#bcccdc" }}>AI-generated via Gemini</span>
-            </div>
-            <p style={{ fontSize: 14, color: "#486581", lineHeight: 1.9, margin: 0, whiteSpace: "pre-line" }}>
-              {summary.recruiterNotes}
-            </p>
-          </div>
-
-          {/* Full transcript */}
-          <div className="rounded-2xl overflow-hidden"
-            style={{ background: "#ffffff", border: "1px solid #d9e2ec", boxShadow: "0 2px 12px rgba(10,31,51,0.05)" }}>
-            <div className="flex items-center gap-2 px-6 py-4" style={{ borderBottom: "1px solid #f0f4f8" }}>
-              <MessageSquare size={14} color="#3b82f6" />
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: "#102a43", margin: 0 }}>Full Transcript</h2>
-              <span className="ml-auto" style={{ fontSize: 11, color: "#bcccdc" }}>
-                {session.transcript.length} messages
-              </span>
-            </div>
-            <div className="flex flex-col divide-y" style={{ borderColor: "#f0f4f8", maxHeight: 480, overflowY: "auto" }}>
-              {(session.transcript as any[]).map((msg, i) => (
-                <div key={i} className="flex gap-3 px-6 py-4">
-                  <div className="flex items-center justify-center rounded-full shrink-0"
-                    style={{ width: 28, height: 28, marginTop: 2,
-                      background: msg.role === "ai" ? "rgba(99,102,241,0.1)" : "#f0f4f8" }}>
-                    {msg.role === "ai"
-                      ? <span style={{ fontSize: 10, fontWeight: 700, color: "#6366f1" }}>AI</span>
-                      : <User size={12} color="#829ab1" />}
-                  </div>
-                  <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: msg.role === "ai" ? "#6366f1" : "#829ab1", margin: "0 0 3px" }}>
-                      {msg.role === "ai" ? "AI Interviewer" : session.candidateName}
-                      <span style={{ color: "#bcccdc", fontWeight: 400, marginLeft: 8 }}>
-                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </p>
-                    <p style={{ fontSize: 13.5, color: "#334e68", margin: 0, lineHeight: 1.6 }}>{msg.content}</p>
-                  </div>
+          {/* Professional details */}
+          <Card title="Professional" icon={Briefcase}>
+            {editing ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <EditField label="Job Title"          value={(draft.jobTitle as string) ?? ""}        onChange={d("jobTitle")}        placeholder="Senior Frontend Engineer" />
+                <EditField label="Current Company"    value={(draft.currentCompany as string) ?? ""}  onChange={d("currentCompany")}  placeholder="Acme Corp" />
+                <EditField label="Years Experience"   value={String(draft.experienceYears ?? "")}      onChange={d("experienceYears")} placeholder="5" type="number" />
+                <EditField label="Education"          value={(draft.education as string) ?? ""}        onChange={d("education")}       placeholder="B.Sc CS, MIT" />
+                <div style={{ gridColumn: "1/-1" }}>
+                  <EditField label="Skills (comma separated)" value={skillsInput} onChange={setSkillsInput} placeholder="React, TypeScript, Node.js" />
                 </div>
-              ))}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <InfoRow icon={Briefcase}        label="Title"      value={candidate.jobTitle} />
+                <InfoRow icon={Briefcase}        label="Company"    value={candidate.currentCompany} />
+                <InfoRow icon={Clock}            label="Experience" value={candidate.experienceYears != null ? `${candidate.experienceYears} years` : null} />
+                <InfoRow icon={GraduationCap}    label="Education"  value={candidate.education} />
+                {candidate.skills?.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: "#f4f6f8", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <CheckCircle2 size={14} color="#829ab1" />
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "#bcccdc", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Skills</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {candidate.skills.map(sk => (
+                          <span key={sk} style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 99, background: "#f0f4f8", color: "#486581", border: "1px solid #e5eaf0" }}>{sk}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* Notes */}
+          <Card title="Recruiter Notes" icon={StickyNote}>
+            {editing ? (
+              <textarea value={(draft.notes as string) ?? ""} onChange={e => setDraft(p => ({ ...p, notes: e.target.value }))}
+                placeholder="Internal notes for the hiring team…" rows={4}
+                style={{ width: "100%", padding: "9px 11px", borderRadius: 9, border: "1.5px solid #e5eaf0", fontSize: 13, color: "#334e68", resize: "vertical", outline: "none", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.6 }}
+                onFocus={e => (e.currentTarget.style.borderColor = "#3b82f6")}
+                onBlur={e => (e.currentTarget.style.borderColor = "#e5eaf0")} />
+            ) : candidate.notes ? (
+              <p style={{ fontSize: 13.5, color: "#486581", lineHeight: 1.8, margin: 0 }}>{candidate.notes}</p>
+            ) : (
+              <p style={{ fontSize: 13, color: "#bcccdc", margin: 0, fontStyle: "italic" }}>No notes yet. Click Edit to add notes.</p>
+            )}
+          </Card>
+        </div>
+
+        {/* RIGHT column */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Contact */}
+          <Card title="Contact" icon={User}>
+            {editing ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+                <EditField label="Full Name"  value={(draft.fullName as string) ?? ""}  onChange={d("fullName")}  placeholder="Sarah Chen" />
+                <EditField label="Email"      value={(draft.email as string) ?? ""}     onChange={d("email")}     placeholder="sarah@example.com" />
+                <EditField label="Phone"      value={(draft.phone as string) ?? ""}     onChange={d("phone")}     placeholder="+1 555 0000" />
+                <EditField label="Location"   value={(draft.location as string) ?? ""}  onChange={d("location")}  placeholder="New York, USA" />
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <InfoRow icon={Mail}    label="Email"    value={candidate.email}    href={candidate.email ? `mailto:${candidate.email}` : undefined} />
+                <InfoRow icon={Phone}   label="Phone"    value={candidate.phone}    href={candidate.phone ? `tel:${candidate.phone}` : undefined} />
+                <InfoRow icon={MapPin}  label="Location" value={candidate.location} />
+              </div>
+            )}
+          </Card>
+
+          {/* Links */}
+          <Card title="Links" icon={Link2}>
+            {editing ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+                <EditField label="LinkedIn URL"    value={(draft.linkedinUrl as string) ?? ""}  onChange={d("linkedinUrl")}  placeholder="linkedin.com/in/sarah" />
+                <EditField label="Portfolio / GitHub" value={(draft.portfolioUrl as string) ?? ""} onChange={d("portfolioUrl")} placeholder="github.com/sarah" />
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <InfoRow icon={Linkedin} label="LinkedIn"  value={candidate.linkedinUrl}  href={candidate.linkedinUrl ?? undefined} />
+                <InfoRow icon={Github}   label="Portfolio" value={candidate.portfolioUrl} href={candidate.portfolioUrl ?? undefined} />
+                {!candidate.linkedinUrl && !candidate.portfolioUrl && (
+                  <p style={{ fontSize: 13, color: "#bcccdc", margin: 0, fontStyle: "italic" }}>No links added.</p>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* Meta */}
+          <Card title="Details" icon={Calendar}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {candidate.resumeFileName && (
+                <InfoRow icon={FileText} label="Resume" value={candidate.resumeFileName} />
+              )}
+              <InfoRow icon={Calendar} label="Added"   value={new Date(candidate.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })} />
+              <InfoRow icon={Clock}    label="Updated" value={new Date(candidate.updatedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })} />
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* ── Delete confirm modal ── */}
+      {confirmDel && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(10,31,51,0.45)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 400, width: "100%", boxShadow: "0 24px 64px rgba(10,31,51,0.18)" }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+              <Trash2 size={20} color="#ef4444" />
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0a1f33", margin: "0 0 8px" }}>Delete Candidate</h3>
+            <p style={{ fontSize: 13.5, color: "#627d98", margin: "0 0 24px", lineHeight: 1.6 }}>
+              Are you sure you want to delete <strong style={{ color: "#334e68" }}>{candidate.fullName}</strong>? This cannot be undone.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmDel(false)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #e5eaf0", background: "#f8fafc", fontSize: 13.5, fontWeight: 600, color: "#486581", cursor: "pointer" }}>Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#ef4444", fontSize: 13.5, fontWeight: 600, color: "#fff", cursor: deleting ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                {deleting ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Trash2 size={14} />}
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
             </div>
           </div>
-
-          {/* Footer timestamp */}
-          <p style={{ fontSize: 11, color: "#bcccdc", textAlign: "center" }}>
-            Summary generated at {summary.generatedAt ? new Date(summary.generatedAt).toLocaleString() : "—"}
-          </p>
         </div>
       )}
     </div>

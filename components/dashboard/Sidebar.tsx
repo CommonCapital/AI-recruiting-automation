@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { href: "/dashboard",            label: "Home",                 icon: LayoutDashboard },
   { href: "/dashboard/jobs",       label: "Jobs",                 icon: Briefcase },
   { href: "/dashboard/candidates", label: "Candidates",           icon: Users },
-  { href: "/dashboard/schedules",  label: "Schedules / Interview",icon: CalendarClock },
+  { href: "/dashboard/interviews", label: "Interviews",           icon: CalendarClock },
   { href: "/dashboard/settings",   label: "Settings",             icon: Settings },
 ];
 
